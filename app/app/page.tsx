@@ -1,139 +1,452 @@
+// app/app/page.tsx
+
 "use client";
 
-import { useState } from "react";
-import { useWindowLauncher } from "./WindowLauncher";
-import type { ScheduleState } from "./types";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-export default function AppPage() {
-  const [urls, setUrls] = useState<string>("");
-  const [numWindows, setNumWindows] = useState<number>(1);
-  const [delaySeconds, setDelaySeconds] = useState<number>(0);
+type ScheduleState = {
+  targetTime: Date | null;
+  urls: string[];
+  numWindows: number;
+  delaySeconds: number;
+  routineName: string;
+};
 
-  const { status, countdown, setStatus, launchWindowsSequentially } =
-    useWindowLauncher();
+export default function SesameTabAppPage() {
+  const [routineName, setRoutineName] = useState("Morning Markets");
+  const [timeInput, setTimeInput] = useState("09:00"); // HH:MM
+  const [numWindows, setNumWindows] = useState(3);
+  const [delaySeconds, setDelaySeconds] = useState(2);
+  const [urlsText, setUrlsText] = useState(
+    [
+      "https://www.cnbc.com/world/?region=usa",
+      "https://www.cnbc.com/gold/",
+      "https://www.cnbc.com/futures-and-commodities/",
+    ].join("\n")
+  );
 
-  const handleLaunch = () => {
-    const urlArray = urls
+  const [schedule, setSchedule] = useState<ScheduleState>({
+    targetTime: null,
+    urls: [],
+    numWindows: 0,
+    delaySeconds: 0,
+    routineName: "",
+  });
+
+  const [status, setStatus] = useState<string>(
+    "No active schedule. Set a ritual on the left."
+  );
+
+  const [countdown, setCountdown] = useState<string>("");
+
+  // Parse URLs and compute how they will be repeated based on numWindows
+  const previewUrls: string[] = useMemo(() => {
+    const rawUrls = urlsText
       .split("\n")
-      .map((url) => url.trim())
-      .filter((url) => url.length > 0);
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0);
 
-    if (urlArray.length === 0) {
-      setStatus("Please enter at least one URL.");
+    if (rawUrls.length === 0 || numWindows <= 0) return [];
+
+    const finalCount = numWindows;
+
+    const expanded: string[] = [];
+
+    for (let i = 0; i < finalCount; i++) {
+      expanded.push(rawUrls[i % rawUrls.length]);
+    }
+
+    return expanded;
+  }, [urlsText, numWindows]);
+
+  // When schedule is active, compute how it will open (for the right-side preview)
+  const scheduledPreview: string[] = useMemo(() => {
+    if (!schedule.targetTime || schedule.numWindows <= 0 || schedule.urls.length === 0) {
+      return [];
+    }
+
+    const expanded: string[] = [];
+
+    for (let i = 0; i < schedule.numWindows; i++) {
+      expanded.push(schedule.urls[i % schedule.urls.length]);
+    }
+
+    return expanded;
+  }, [schedule]);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+
+    if (!timeInput) {
+      alert("Please enter a time (e.g., 09:00).");
       return;
     }
 
-    const state: ScheduleState = {
-      urls: urlArray,
-      numWindows: Math.max(1, numWindows),
-      delaySeconds: Math.max(0, delaySeconds),
-      targetTime: null,
-    };
+    const [hourStr, minuteStr] = timeInput.split(":");
+    const hour = Number(hourStr);
+    const minute = Number(minuteStr);
 
-    launchWindowsSequentially(state);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) {
+      alert("Invalid time format. Use HH:MM.");
+      return;
+    }
+
+    const now = new Date();
+    const target = new Date();
+    target.setHours(hour, minute, 0, 0);
+
+    // If time already passed today, schedule for tomorrow
+    if (target.getTime() <= now.getTime()) {
+      target.setDate(target.getDate() + 1);
+    }
+
+    const rawUrls = urlsText
+      .split("\n")
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0);
+
+    if (rawUrls.length === 0) {
+      alert("Please enter at least one URL.");
+      return;
+    }
+
+    const n = numWindows > 0 ? numWindows : rawUrls.length;
+    const d = delaySeconds >= 0 ? delaySeconds : 0;
+    const name = routineName.trim() || "SesameTab Ritual";
+
+    setSchedule({
+      targetTime: target,
+      urls: rawUrls,
+      numWindows: n,
+      delaySeconds: d,
+      routineName: name,
+    });
+
+    setStatus(
+      `Scheduled "${name}" to open up to ${n} window(s) at ${target.toLocaleTimeString()} on ${target.toLocaleDateString()}. Delay: ${d}s between openings.`
+    );
+
+    setCountdown("");
   };
 
+  const launchWindowsSequentially = (state: ScheduleState) => {
+    if (state.numWindows <= 0 || state.urls.length === 0) {
+      setStatus("Nothing to open — please provide URLs and number of windows.");
+      return;
+    }
+
+    setStatus("Launching windows...");
+
+    // Build expanded URL list based on desired count
+    const urlsToOpen: string[] = [];
+
+    for (let i = 0; i < state.numWindows; i++) {
+      urlsToOpen.push(state.urls[i % state.urls.length]);
+    }
+
+    const delayMs = Math.max(0, state.delaySeconds) * 1000;
+
+    const openAtIndex = (index: number) => {
+      if (index >= urlsToOpen.length) {
+        setStatus(
+          `Done. Opened ${urlsToOpen.length} window(s). If popups were blocked, check your browser bar.`
+        );
+
+        setCountdown("");
+
+        setSchedule((prev) => ({
+          ...prev,
+          // keep schedule.targetTime? you can decide – here we clear it
+          targetTime: null,
+          urls: prev.urls,
+          numWindows: prev.numWindows,
+          delaySeconds: prev.delaySeconds,
+        }));
+
+        return;
+      }
+
+      const url = urlsToOpen[index];
+      window.open(url, "_blank", "noopener,noreferrer");
+
+      if (delayMs > 0) {
+        window.setTimeout(() => openAtIndex(index + 1), delayMs);
+      } else {
+        openAtIndex(index + 1);
+      }
+    };
+
+    openAtIndex(0);
+  };
+
+  // Schedule countdown + trigger
+  useEffect(() => {
+    if (!schedule.targetTime) return;
+
+    const interval = window.setInterval(() => {
+      const now = new Date();
+      const diffMs = schedule.targetTime!.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        window.clearInterval(interval);
+        launchWindowsSequentially(schedule);
+        return;
+      }
+
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+
+      const parts: string[] = [];
+
+      if (hours > 0) parts.push(`${hours}h`);
+      if (minutes > 0 || hours > 0) parts.push(`${minutes}m`);
+      parts.push(`${seconds}s`);
+
+      setCountdown("Time remaining: " + parts.join(" "));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [schedule]);
+
+  const launchNow = () => {
+    const rawUrls = urlsText
+      .split("\n")
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0);
+
+    if (rawUrls.length === 0) {
+      alert("Please enter at least one URL.");
+      return;
+    }
+
+    const n = numWindows > 0 ? numWindows : rawUrls.length;
+    const d = delaySeconds >= 0 ? delaySeconds : 0;
+    const name = routineName.trim() || "SesameTab Ritual";
+
+    const tempSchedule: ScheduleState = {
+      targetTime: null,
+      urls: rawUrls,
+      numWindows: n,
+      delaySeconds: d,
+      routineName: name,
+    };
+
+    launchWindowsSequentially(tempSchedule);
+  };
+
+  const upcomingLabel = useMemo(() => {
+    if (!schedule.targetTime) return "No active schedule";
+
+    const now = new Date();
+    const target = schedule.targetTime;
+
+    const isToday =
+      now.toDateString() === target.toDateString() ? "Today" : "Tomorrow";
+
+    return `${isToday} at ${target.toLocaleTimeString()}`;
+  }, [schedule.targetTime]);
+
   return (
-    <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto" }}>
-      <h1>Auto Schedule Window Launcher</h1>
-
-      <div style={{ marginBottom: "15px" }}>
-        <label htmlFor="urls" style={{ display: "block", marginBottom: "5px" }}>
-          URLs (one per line):
-        </label>
-        <textarea
-          id="urls"
-          value={urls}
-          onChange={(e) => setUrls(e.target.value)}
-          rows={6}
-          style={{
-            width: "100%",
-            padding: "8px",
-            fontFamily: "monospace",
-            boxSizing: "border-box",
-          }}
-          placeholder="https://example.com&#10;https://example.org&#10;https://example.net"
-        />
+    <main className="min-h-screen bg-slate-950 text-slate-50">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 h-80 w-80 rounded-full bg-amber-500/20 blur-3xl" />
+        <div className="absolute top-40 -left-10 h-64 w-64 rounded-full bg-orange-500/10 blur-3xl" />
+        <div className="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-yellow-400/10 blur-3xl" />
       </div>
 
-      <div style={{ marginBottom: "15px" }}>
-        <label
-          htmlFor="numWindows"
-          style={{ display: "block", marginBottom: "5px" }}
-        >
-          Number of Windows:
-        </label>
-        <input
-          id="numWindows"
-          type="number"
-          min="1"
-          value={numWindows}
-          onChange={(e) => setNumWindows(parseInt(e.target.value) || 1)}
-          style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
-        />
-      </div>
+      <div className="relative z-10 flex min-h-screen flex-col">
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-8 md:py-12">
+          {/* Header */}
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-lg font-semibold md:text-xl">SesameTab Ritual</h1>
+              <p className="mt-1 text-xs text-slate-400 md:text-sm">
+                Set the time, URLs, and rhythm for your opening sequence. Keep this
+                page open and let your routine unfold.
+              </p>
+            </div>
+            <span className="rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-100 border border-amber-400/40">
+              MVP • Local only
+            </span>
+          </div>
 
-      <div style={{ marginBottom: "15px" }}>
-        <label
-          htmlFor="delaySeconds"
-          style={{ display: "block", marginBottom: "5px" }}
-        >
-          Delay Between Windows (seconds):
-        </label>
-        <input
-          id="delaySeconds"
-          type="number"
-          min="0"
-          step="0.1"
-          value={delaySeconds}
-          onChange={(e) =>
-            setDelaySeconds(parseFloat(e.target.value) || 0)
-          }
-          style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
-        />
-      </div>
+          {/* Main card */}
+          <div className="flex flex-1 flex-col gap-6 rounded-2xl border border-white/10 bg-slate-900/70 p-4 shadow-lg md:flex-row md:p-6">
+            {/* Left: Form */}
+            <div className="w-full md:w-1/2 md:pr-4">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-200">
+                    Routine name (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={routineName}
+                    onChange={(e) => setRoutineName(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
+                    placeholder="Morning Markets, Deep Work, Creator Studio..."
+                  />
+                </div>
 
-      <button
-        onClick={handleLaunch}
-        style={{
-          width: "100%",
-          padding: "12px",
-          fontSize: "16px",
-          backgroundColor: "#007bff",
-          color: "white",
-          border: "none",
-          borderRadius: "4px",
-          cursor: "pointer",
-          marginBottom: "15px",
-        }}
-      >
-        Launch Windows
-      </button>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-200">
+                      Start time (local)
+                    </label>
+                    <input
+                      type="time"
+                      value={timeInput}
+                      onChange={(e) => setTimeInput(e.target.value)}
+                      className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
+                    />
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      If this time has passed, SesameTab will schedule for tomorrow.
+                    </p>
+                  </div>
 
-      {status && (
-        <div
-          style={{
-            padding: "10px",
-            backgroundColor: "#f8f9fa",
-            borderRadius: "4px",
-            marginBottom: "10px",
-          }}
-        >
-          <strong>Status:</strong> {status}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-200">
+                      Number of windows / tabs
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={numWindows}
+                      onChange={(e) =>
+                        setNumWindows(Math.max(1, Number(e.target.value) || 1))
+                      }
+                      className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
+                    />
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      If you request more than your URLs, they&apos;ll repeat in order.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-200">
+                    Delay between openings (seconds)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={delaySeconds}
+                    onChange={(e) =>
+                      setDelaySeconds(Math.max(0, Number(e.target.value) || 0))
+                    }
+                    className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Use 1–3 seconds to avoid a &quot;popup storm&quot; feeling.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-200">
+                    URLs in this ritual (one per line)
+                  </label>
+                  <textarea
+                    value={urlsText}
+                    onChange={(e) => setUrlsText(e.target.value)}
+                    rows={6}
+                    className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-xs font-mono text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    type="submit"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+                  >
+                    ✨ Start schedule
+                  </button>
+                  <button
+                    type="button"
+                    onClick={launchNow}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-4 py-2 text-xs font-medium text-slate-100 hover:border-amber-400 hover:text-amber-200"
+                  >
+                    ⚡ Launch now (ignore schedule)
+                  </button>
+                </div>
+
+                <p className="mt-2 text-[10px] text-slate-500">
+                  Keep this page open and allow pop-ups for SesameTab so your
+                  ritual can open the windows for you.
+                </p>
+              </form>
+            </div>
+
+            {/* Right: Preview & status */}
+            <div className="w-full md:w-1/2 md:pl-4 mt-4 md:mt-0">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-50">
+                    Ritual overview
+                  </h2>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {schedule.targetTime
+                      ? `Next run: ${upcomingLabel}`
+                      : "No active schedule yet."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2">
+                <p className="text-xs font-medium text-slate-200">Status</p>
+                <p className="mt-1 text-[11px] text-slate-300">{status}</p>
+                {countdown && (
+                  <p className="mt-1 text-[11px] text-amber-200">{countdown}</p>
+                )}
+              </div>
+
+              <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-3">
+                <p className="text-xs font-medium text-slate-200 mb-2">
+                  Sequence preview
+                </p>
+                <div className="space-y-2 max-h-64 overflow-auto pr-1">
+                  {previewUrls.length === 0 ? (
+                    <p className="text-[11px] text-slate-400">
+                      Add URLs and a number of windows on the left to see how your
+                      ritual will open.
+                    </p>
+                  ) : (
+                    previewUrls.slice(0, 8).map((u, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-start justify-between rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-semibold text-amber-200">
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <div className="text-[11px] font-medium text-slate-100">
+                              {new URL(u).hostname.replace("www.", "")}
+                            </div>
+                            <div className="max-w-[200px] truncate text-[10px] text-slate-400">
+                              {u}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-amber-200">
+                          +{idx * delaySeconds}s
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                {previewUrls.length > 8 && (
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Showing first 8 of {previewUrls.length} openings.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-      )}
-
-      {countdown && (
-        <div
-          style={{
-            padding: "10px",
-            backgroundColor: "#e7f3ff",
-            borderRadius: "4px",
-          }}
-        >
-          <strong>Countdown:</strong> {countdown}
-        </div>
-      )}
-    </div>
+      </div>
+    </main>
   );
 }

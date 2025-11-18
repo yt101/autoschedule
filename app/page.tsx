@@ -1,8 +1,43 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 export default function HomePage() {
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  async function handleCheckout(plan: "monthly" | "yearly") {
+    if (isCheckingOut) return;
+
+    try {
+      setIsCheckingOut(true);
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ plan }),
+      });
+
+      if (!res.ok) {
+        console.error("Checkout error:", await res.text());
+        alert("Something went wrong starting checkout. Please try again.");
+        return;
+      }
+
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert("Stripe did not return a checkout URL.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Unexpected error starting checkout.");
+    } finally {
+      setIsCheckingOut(false);
+    }
+  }
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
       {/* Top gradient background */}
@@ -254,73 +289,95 @@ export default function HomePage() {
               Simple pricing for daily magic
             </h2>
             <p className="mt-1 max-w-xl text-sm text-slate-400">
-              Start free. Upgrade when SesameTab becomes part of your daily
-              ritual.
+              Start with a 3-day free trial. If SesameTab becomes part of your
+              daily ritual, keep it running for less than the price of a coffee.
             </p>
 
             <div className="mt-8 grid gap-6 md:grid-cols-2">
-              {/* Free */}
+              {/* Trial / Starter info */}
               <div className="flex flex-col rounded-2xl border border-white/15 bg-slate-900/70 p-6">
                 <h3 className="text-lg font-semibold text-slate-50">
-                  Free Ritual
+                  3-Day Trial Ritual
                 </h3>
                 <p className="mt-1 text-sm text-slate-400">
-                  Get started with a single daily ritual.
+                  Try SesameTab with your real routine for three days.
                 </p>
                 <div className="mt-4 text-3xl font-semibold text-slate-50">
                   $0
                   <span className="text-sm font-normal text-slate-400">
-                    /forever
+                    / first 3 days
                   </span>
                 </div>
                 <ul className="mt-4 space-y-2 text-sm text-slate-300">
-                  <li>• 1 saved routine</li>
-                  <li>• Up to 5 URLs per routine</li>
-                  <li>• Custom delay between openings</li>
-                  <li>• Runs directly in your browser</li>
+                  <li>• Full Pro features for 3 days</li>
+                  <li>• Great for testing Morning Markets or Deep Work rituals</li>
+                  <li>• Cancel anytime during the trial</li>
                 </ul>
                 <div className="mt-6">
-                  <Link
-                    href="/app"
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/25 px-4 py-2 text-sm font-medium text-slate-50 hover:border-amber-400 hover:text-amber-200"
+                  <button
+                    onClick={() => handleCheckout("monthly")}
+                    disabled={isCheckingOut}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/25 px-4 py-2 text-sm font-medium text-slate-50 hover:border-amber-400 hover:text-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Start free ritual
-                  </Link>
+                    {isCheckingOut ? "Loading..." : "Start 3-day trial → Monthly"}
+                  </button>
                 </div>
+                <p className="mt-2 text-[10px] text-slate-500">
+                  Trial handled by Stripe. You can cancel before it renews.
+                </p>
               </div>
 
               {/* Pro */}
               <div className="flex flex-col rounded-2xl border border-amber-400/60 bg-gradient-to-b from-slate-900/80 via-slate-900/80 to-slate-950 p-6 shadow-lg shadow-amber-500/20">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-amber-50">
-                    Pro Ritual
+                    SesameTab Pro
                   </h3>
                   <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-100">
-                    Coming soon
+                    Best for daily users
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-amber-100/80">
-                  For power users, creators, and traders who live in routines.
+                  For traders, creators, and deep workers who live by rituals.
                 </p>
-                <div className="mt-4 text-3xl font-semibold text-amber-50">
-                  $4.99
-                  <span className="text-sm font-normal text-amber-100/80">
-                    /month
-                  </span>
+                <div className="mt-4">
+                  <div className="flex items-baseline gap-3">
+                    <div className="text-3xl font-semibold text-amber-50">
+                      $4.99
+                      <span className="text-sm font-normal text-amber-100/80">
+                        /month
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-amber-100/80">
+                    Or pay annually and get ~10% off.
+                  </p>
                 </div>
                 <ul className="mt-4 space-y-2 text-sm text-amber-50/90">
                   <li>• Unlimited routines</li>
-                  <li>• Unlimited URLs per routine</li>
-                  <li>• Export to CMD / shell scripts</li>
-                  <li>• Advanced presets & profiles</li>
-                  <li>• Priority feature voting</li>
+                  <li>• Unlimited URLs per routine*</li>
+                  <li>• Custom delays and presets</li>
+                  <li>• Export to OS scripts (coming soon)</li>
+                  <li>• Priority for new features</li>
                 </ul>
-                <div className="mt-6">
+                <p className="mt-2 text-[10px] text-amber-100/70">
+                  *Within the practical limits of your browser and computer.
+                  Please use responsibly and in line with each site&apos;s terms.
+                </p>
+                <div className="mt-6 space-y-2">
                   <button
-                    disabled
-                    className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl bg-amber-400/60 px-4 py-2 text-sm font-semibold text-slate-950"
+                    onClick={() => handleCheckout("monthly")}
+                    disabled={isCheckingOut}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Join waitlist
+                    {isCheckingOut ? "Loading..." : "Go Pro – Monthly"}
+                  </button>
+                  <button
+                    onClick={() => handleCheckout("yearly")}
+                    disabled={isCheckingOut}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-amber-400/70 px-4 py-2 text-xs font-medium text-amber-50 hover:bg-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isCheckingOut ? "Loading..." : "Go Pro – Annual (10% off)"}
                   </button>
                 </div>
               </div>
