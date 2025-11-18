@@ -23,8 +23,11 @@ export default async function BillingPage({ searchParams }: BillingPageProps) {
       const status = session.status;
       const paymentStatus = session.payment_status;
 
+      // Check if payment is complete
+      // status can be: "expired" | "open" | "complete" | null
+      // payment_status can be: "paid" | "unpaid" | "no_payment_required"
       const isPaid =
-        paymentStatus === "paid" || status === "complete" || status === "paid";
+        paymentStatus === "paid" || status === "complete";
 
       if (isPaid) {
         title = "You're Pro ✨";
