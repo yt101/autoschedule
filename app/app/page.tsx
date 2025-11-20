@@ -3,6 +3,25 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+
+function getHostnameSafe(u: string): string {
+  if (!u) return "";
+
+  try {
+    // If user didn't include a scheme, assume https://
+    const maybeUrl = u.startsWith("http://") || u.startsWith("https://")
+      ? u
+      : `https://${u}`;
+
+    const url = new URL(maybeUrl);
+    return url.hostname.replace(/^www\./, "");
+  } catch {
+    // Fallback: show a truncated raw string instead of crashing
+    return u.length > 30 ? u.slice(0, 30) + "…" : u;
+  }
+}
 
 type ScheduleState = {
   targetTime: Date | null;
@@ -13,17 +32,52 @@ type ScheduleState = {
 };
 
 export default function SesameTabAppPage() {
-  const [routineName, setRoutineName] = useState("Morning Markets");
-  const [timeInput, setTimeInput] = useState("09:00"); // HH:MM
-  const [numWindows, setNumWindows] = useState(3);
-  const [delaySeconds, setDelaySeconds] = useState(2);
-  const [urlsText, setUrlsText] = useState(
-    [
-      "https://www.cnbc.com/world/?region=usa",
-      "https://www.cnbc.com/gold/",
-      "https://www.cnbc.com/futures-and-commodities/",
-    ].join("\n")
+  const searchParams = useSearchParams();
+  const isDemo = searchParams.get("demo") === "1";
+
+  const demoUrls = [
+    "https://www.cnbc.com/world/?region=usa",
+    "https://www.cnbc.com/gold/",
+    "https://www.cnbc.com/futures-and-commodities/",
+  ];
+
+  const [routineName, setRoutineName] = useState(
+    isDemo ? "Morning Markets (Demo)" : "Morning Markets"
   );
+  const [timeInput, setTimeInput] = useState("09:00");
+  const [numWindows, setNumWindows] = useState(isDemo ? 3 : 3);
+  const [delaySeconds, setDelaySeconds] = useState(2);
+  const [urlsText, setUrlsText] = useState(() =>
+    (isDemo ? demoUrls : demoUrls).join("\n")
+  );
+
+  const handleGoPro = async (billing: "monthly" | "yearly" = "monthly") => {
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: billing === "yearly" ? "pro_yearly" : "pro_monthly",
+        }),
+      });
+
+      if (!res.ok) {
+        console.error("Checkout error:", await res.text());
+        alert("Something went wrong starting checkout. Please try again.");
+        return;
+      }
+
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert("No checkout URL returned.");
+      }
+    } catch (e) {
+      console.error("Checkout request failed:", e);
+      alert("Network error starting checkout.");
+    }
+  };
 
   const [schedule, setSchedule] = useState<ScheduleState>({
     targetTime: null,
@@ -106,7 +160,7 @@ export default function SesameTabAppPage() {
       .filter((u) => u.length > 0);
 
     if (rawUrls.length === 0) {
-      alert("Please enter at least one URL.");
+      setStatus("Enter at least one URL.");
       return;
     }
 
@@ -260,16 +314,36 @@ export default function SesameTabAppPage() {
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-8 md:py-12">
           {/* Header */}
           <div className="mb-6 flex items-center justify-between gap-3">
-            <div>
-              <h1 className="text-lg font-semibold md:text-xl">SesameTab Ritual</h1>
-              <p className="mt-1 text-xs text-slate-400 md:text-sm">
-                Set the time, URLs, and rhythm for your opening sequence. Keep this
-                page open and let your routine unfold.
-              </p>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/"
+                className="inline-flex items-center rounded-lg border border-white/15 px-2 py-1 text-[11px] text-slate-300 hover:border-amber-400 hover:text-amber-200"
+              >
+                ← Home
+              </Link>
+              <div>
+                <h1 className="text-lg font-semibold md:text-xl">
+                  SesameTab Ritual {isDemo && <span className="text-xs text-amber-300">(Demo)</span>}
+                </h1>
+                <p className="mt-1 text-xs text-slate-400 md:text-sm">
+                  Set the time and rhythm for your opening sequence. Keep this page open and
+                  let your ritual unfold.
+                </p>
+              </div>
             </div>
-            <span className="rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-100 border border-amber-400/40">
-              MVP • Local only
-            </span>
+
+            <div className="flex flex-col items-end gap-2">
+              <span className="rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-100 border border-amber-400/40">
+                MVP • Local only
+              </span>
+              <button
+                type="button"
+                onClick={handleGoPro}
+                className="inline-flex items-center rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+              >
+                ⭐ Go Pro
+              </button>
+            </div>
           </div>
 
           {/* Main card */}
@@ -285,6 +359,7 @@ export default function SesameTabAppPage() {
                     type="text"
                     value={routineName}
                     onChange={(e) => setRoutineName(e.target.value)}
+                    disabled={isDemo}
                     className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
                     placeholder="Morning Markets, Deep Work, Creator Studio..."
                   />
@@ -299,6 +374,7 @@ export default function SesameTabAppPage() {
                       type="time"
                       value={timeInput}
                       onChange={(e) => setTimeInput(e.target.value)}
+                      disabled={isDemo}
                       className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
                     />
                     <p className="mt-1 text-[10px] text-slate-400">
@@ -314,13 +390,17 @@ export default function SesameTabAppPage() {
                       type="number"
                       min={1}
                       value={numWindows}
-                      onChange={(e) =>
-                        setNumWindows(Math.max(1, Number(e.target.value) || 1))
-                      }
-                      className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
+                      onChange={(e) => {
+                        if (isDemo) return; // lock in demo mode
+                        setNumWindows(Math.max(1, Number(e.target.value) || 1));
+                      }}
+                      disabled={isDemo}
+                      className={`mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 ${isDemo ? "opacity-50 pointer-events-none" : ""}`}
                     />
                     <p className="mt-1 text-[10px] text-slate-400">
-                      If you request more than your URLs, they&apos;ll repeat in order.
+                      {isDemo
+                        ? "In demo mode, this ritual uses 3 windows."
+                        : "If you request more than your URLs, they'll repeat in order."}
                     </p>
                   </div>
                 </div>
@@ -349,10 +429,19 @@ export default function SesameTabAppPage() {
                   </label>
                   <textarea
                     value={urlsText}
-                    onChange={(e) => setUrlsText(e.target.value)}
+                    onChange={(e) => {
+                      if (isDemo) return; // lock in demo mode
+                      setUrlsText(e.target.value);
+                    }}
+                    disabled={isDemo}
                     rows={6}
-                    className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-xs font-mono text-slate-100"
+                    className={`mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-xs font-mono text-slate-100 ${isDemo ? "opacity-50 pointer-events-none" : ""}`}
                   />
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    {isDemo
+                      ? "Demo mode: URLs are fixed so you can see SesameTab in action."
+                      : "Example: CNBC, TradingView, Notion, dashboards, YouTube, docs…"}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -376,6 +465,40 @@ export default function SesameTabAppPage() {
                   ritual can open the windows for you.
                 </p>
               </form>
+
+              {/* Stripe Checkout Button */}
+              <div className="mt-4 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/checkout-monthly", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                      });
+
+                      if (!res.ok) {
+                        const error = await res.json();
+                        alert(error.error || "Something went wrong starting checkout.");
+                        return;
+                      }
+
+                      const data = await res.json();
+                      if (data.url) {
+                        window.location.href = data.url;
+                      } else {
+                        alert("No checkout URL returned.");
+                      }
+                    } catch (err) {
+                      console.error("Checkout error:", err);
+                      alert("Unable to start checkout. Please try again.");
+                    }
+                  }}
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+                >
+                  ⭐ Go Pro - Start 3-day trial
+                </button>
+              </div>
             </div>
 
             {/* Right: Preview & status */}
@@ -412,29 +535,39 @@ export default function SesameTabAppPage() {
                       ritual will open.
                     </p>
                   ) : (
-                    previewUrls.slice(0, 8).map((u, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-start justify-between rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-semibold text-amber-200">
-                            {idx + 1}
-                          </span>
-                          <div>
-                            <div className="text-[11px] font-medium text-slate-100">
-                              {new URL(u).hostname.replace("www.", "")}
-                            </div>
-                            <div className="max-w-[200px] truncate text-[10px] text-slate-400">
-                              {u}
+                    previewUrls.slice(0, 8).map((u, idx) => {
+                      let hostname = u;
+                      try {
+                        hostname = new URL(u).hostname.replace("www.", "");
+                      } catch {
+                        // leave hostname as the raw string or a fallback
+                        hostname = u || "URL";
+                      }
+
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-start justify-between rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2"
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-semibold text-amber-200">
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <div className="text-[11px] font-medium text-slate-100">
+                                {hostname}
+                              </div>
+                              <div className="max-w-[200px] truncate text-[10px] text-slate-400">
+                                {u}
+                              </div>
                             </div>
                           </div>
+                          <span className="text-[10px] text-amber-200">
+                            +{idx * delaySeconds}s
+                          </span>
                         </div>
-                        <span className="text-[10px] text-amber-200">
-                          +{idx * delaySeconds}s
-                        </span>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
                 {previewUrls.length > 8 && (
@@ -443,6 +576,14 @@ export default function SesameTabAppPage() {
                   </p>
                 )}
               </div>
+
+              <button
+                type="button"
+                onClick={() => handleGoPro("monthly")}
+                className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+              >
+                💳 Go Pro (unlock full control)
+              </button>
             </div>
           </div>
         </div>

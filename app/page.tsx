@@ -1,22 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 
 export default function HomePage() {
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
-  async function handleCheckout(plan: "monthly" | "yearly") {
-    if (isCheckingOut) return;
-
+  const handleCheckout = async (plan: "monthly" | "yearly") => {
     try {
-      setIsCheckingOut(true);
+      // Map to pro_monthly/pro_yearly for the API
+      const proPlan = plan === "yearly" ? "pro_yearly" : "pro_monthly";
+      
       const res = await fetch("/api/checkout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ plan }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: proPlan }),
       });
 
       if (!res.ok) {
@@ -28,16 +24,12 @@ export default function HomePage() {
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
-      } else {
-        alert("Stripe did not return a checkout URL.");
       }
     } catch (err) {
-      console.error(err);
-      alert("Unexpected error starting checkout.");
-    } finally {
-      setIsCheckingOut(false);
+      console.error("Checkout error:", err);
+      alert("Something went wrong starting checkout. Please try again.");
     }
-  }
+  };
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
       {/* Top gradient background */}
@@ -79,6 +71,9 @@ export default function HomePage() {
               <a href="#faq" className="hover:text-amber-300">
                 FAQ
               </a>
+              <Link href="/about" className="hover:text-amber-300">
+                About
+              </Link>
             </nav>
 
             <div className="flex items-center gap-3">
@@ -124,7 +119,7 @@ export default function HomePage() {
 
               <div className="mt-6 flex flex-wrap items-center gap-4">
                 <Link
-                  href="/app"
+                  href="/app?demo=1"
                   className="inline-flex items-center justify-center rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-amber-400/30 hover:bg-amber-300"
                 >
                   ✨ Open SesameTab
@@ -316,10 +311,9 @@ export default function HomePage() {
                 <div className="mt-6">
                   <button
                     onClick={() => handleCheckout("monthly")}
-                    disabled={isCheckingOut}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/25 px-4 py-2 text-sm font-medium text-slate-50 hover:border-amber-400 hover:text-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
                   >
-                    {isCheckingOut ? "Loading..." : "Start 3-day trial → Monthly"}
+                    Start 3-day trial
                   </button>
                 </div>
                 <p className="mt-2 text-[10px] text-slate-500">
@@ -367,17 +361,15 @@ export default function HomePage() {
                 <div className="mt-6 space-y-2">
                   <button
                     onClick={() => handleCheckout("monthly")}
-                    disabled={isCheckingOut}
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
                   >
-                    {isCheckingOut ? "Loading..." : "Go Pro – Monthly"}
+                    Start 3-day trial
                   </button>
                   <button
                     onClick={() => handleCheckout("yearly")}
-                    disabled={isCheckingOut}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-amber-400/70 px-4 py-2 text-xs font-medium text-amber-50 hover:bg-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-amber-400/70 px-4 py-2 text-xs font-medium text-amber-50 hover:bg-amber-500/10"
                   >
-                    {isCheckingOut ? "Loading..." : "Go Pro – Annual (10% off)"}
+                    Go Pro – Annual (10% off)
                   </button>
                 </div>
               </div>
