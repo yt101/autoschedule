@@ -2,9 +2,11 @@
 
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+
+export const dynamic = 'force-dynamic';
 
 function getHostnameSafe(u: string): string {
   if (!u) return "";
@@ -31,7 +33,7 @@ type ScheduleState = {
   routineName: string;
 };
 
-export default function SesameTabAppPage() {
+function SesameTabAppPageContent() {
   const searchParams = useSearchParams();
   const isDemo = searchParams.get("demo") === "1";
 
@@ -338,7 +340,7 @@ export default function SesameTabAppPage() {
               </span>
               <button
                 type="button"
-                onClick={handleGoPro}
+                onClick={() => handleGoPro("monthly")}
                 className="inline-flex items-center rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
               >
                 ⭐ Go Pro
@@ -589,5 +591,13 @@ export default function SesameTabAppPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function SesameTabAppPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">Loading...</div>}>
+      <SesameTabAppPageContent />
+    </Suspense>
   );
 }
