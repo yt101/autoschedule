@@ -1,36 +1,60 @@
+// app/login/page.tsx
+
 "use client";
 
 
 
-import { useState } from "react";
+import { FormEvent, useState } from "react";
+
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-
-import Link from "next/link";
 
 
 
 export default function LoginPage() {
 
+  const router = useRouter();
+
+  const searchParams = useSearchParams();
+
   const supabase = createClientComponentClient();
+
+
+
+  const checkoutStatus = searchParams.get("checkout"); // "success" or null
+
+
 
   const [email, setEmail] = useState("");
 
   const [password, setPassword] = useState("");
 
-  const [status, setStatus] = useState("");
+  const [message, setMessage] = useState<string | null>(
+
+    checkoutStatus === "success"
+
+      ? "Login to activate your SesameTab Pro access."
+
+      : null
+
+  );
+
+  const [loading, setLoading] = useState(false);
 
 
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: FormEvent) => {
 
     e.preventDefault();
 
-    setStatus("");
+    setLoading(true);
+
+    setMessage(null);
 
 
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
 
       email,
 
@@ -42,9 +66,11 @@ export default function LoginPage() {
 
     if (error) {
 
-      console.error(error);
+      console.error("Login error:", error);
 
-      setStatus(error.message);
+      setMessage(error.message || "Invalid login credentials.");
+
+      setLoading(false);
 
       return;
 
@@ -52,11 +78,27 @@ export default function LoginPage() {
 
 
 
-    // Login success
+    // If they just came back from Stripe, mark them as Pro
 
-    setStatus("Logged in! Redirecting…");
+    if (checkoutStatus === "success") {
 
-    window.location.href = "/app";
+      try {
+
+        localStorage.setItem("sesametab_isPro", "true");
+
+      } catch (err) {
+
+        console.warn("Unable to access localStorage:", err);
+
+      }
+
+    }
+
+
+
+    // Normal flow: send user to /app
+
+    router.push("/app");
 
   };
 
@@ -64,27 +106,39 @@ export default function LoginPage() {
 
   return (
 
-    <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center p-6">
+    <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
 
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/70 p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-lg">
 
+        <h1 className="text-lg font-semibold">Sign in to SesameTab</h1>
 
+        <p className="mt-1 text-xs text-slate-400">
 
-        <h1 className="text-xl font-semibold mb-2">Log in</h1>
+          No credit card required for your trial. Just confirm your email and
 
-        <p className="text-sm text-slate-400 mb-6">
-
-          Welcome back to SesameTab.
+          sign in.
 
         </p>
 
 
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        {message && (
+
+          <div className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+
+            {message}
+
+          </div>
+
+        )}
+
+
+
+        <form onSubmit={handleLogin} className="mt-4 space-y-3">
 
           <div>
 
-            <label className="block text-xs font-medium text-slate-300">
+            <label className="block text-xs font-medium text-slate-200">
 
               Email
 
@@ -100,17 +154,15 @@ export default function LoginPage() {
 
               onChange={(e) => setEmail(e.target.value)}
 
-              className="w-full mt-1 rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
 
             />
 
           </div>
 
-
-
           <div>
 
-            <label className="block text-xs font-medium text-slate-300">
+            <label className="block text-xs font-medium text-slate-200">
 
               Password
 
@@ -126,7 +178,7 @@ export default function LoginPage() {
 
               onChange={(e) => setPassword(e.target.value)}
 
-              className="w-full mt-1 rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
 
             />
 
@@ -134,23 +186,17 @@ export default function LoginPage() {
 
 
 
-          {status && (
-
-            <p className="text-xs text-amber-300">{status}</p>
-
-          )}
-
-
-
           <button
 
             type="submit"
 
-            className="w-full rounded-xl bg-amber-400 py-2 text-slate-950 font-semibold text-sm hover:bg-amber-300"
+            disabled={loading}
+
+            className="mt-2 inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300 disabled:opacity-60"
 
           >
 
-            Log in
+            {loading ? "Signing in..." : "Sign in"}
 
           </button>
 
@@ -158,17 +204,23 @@ export default function LoginPage() {
 
 
 
-        <div className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-4 text-[11px] text-slate-500 text-center">
 
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
 
-          <Link href="/signup" className="text-amber-300 hover:text-amber-200">
+          <a
 
-            Create one
+            href="/signup"
 
-          </Link>
+            className="text-amber-300 hover:text-amber-200 underline offset-1"
 
-        </div>
+          >
+
+            Sign up
+
+          </a>
+
+        </p>
 
       </div>
 

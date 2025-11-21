@@ -27,6 +27,7 @@ function SesameTabAppPageContent() {
   const searchParams = useSearchParams();
   const isDemo = searchParams.get("demo") === "1";
 
+  const [isPro, setIsPro] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
 
@@ -59,6 +60,16 @@ function SesameTabAppPageContent() {
   );
 
   const [countdown, setCountdown] = useState<string>("");
+
+  // Check localStorage for isPro status
+  useEffect(() => {
+    try {
+      const value = localStorage.getItem("sesametab_isPro");
+      setIsPro(value === "true");
+    } catch (err) {
+      console.warn("Unable to access localStorage:", err);
+    }
+  }, []);
 
   // 1) Load Supabase user + profile on mount
   useEffect(() => {
@@ -132,9 +143,12 @@ function SesameTabAppPageContent() {
     return { isTrialActive: true, label };
   }, [profile, now]);
 
-  const isPro = profile?.plan === "pro";
+  // isPro from localStorage takes precedence, fallback to profile
+  const isProFromStorage = isPro;
+  const isProFromProfile = profile?.plan === "pro";
+  const finalIsPro = isProFromStorage || isProFromProfile;
   const isTrialActive = trialInfo.isTrialActive;
-  const canUseApp = isPro || isTrialActive;
+  const canUseApp = finalIsPro || isTrialActive;
 
   // Parse URLs and compute how they will be repeated based on numWindows
   const previewUrls: string[] = useMemo(() => {
@@ -419,13 +433,13 @@ function SesameTabAppPageContent() {
 
             <div className="flex flex-col items-end gap-1">
               <span className="rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-100 border border-amber-400/40">
-                {isPro ? "Pro plan" : "3-day trial"}
+                {finalIsPro ? "Pro plan" : "3-day trial"}
               </span>
               <span className="text-[10px] text-slate-400">
                 {trialInfo.label}
               </span>
               <div className="flex gap-2 mt-1">
-                {!isPro && (
+                {!finalIsPro && (
                   <button
                     onClick={handleGoPro}
                     className="inline-flex items-center rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
@@ -539,20 +553,29 @@ function SesameTabAppPageContent() {
                 <div className="space-y-2">
                   <button
                     type="submit"
-                    disabled={!canUseApp}
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300 disabled:opacity-60"
+                    disabled={!finalIsPro}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     ✨ Start schedule
                   </button>
                   <button
                     type="button"
                     onClick={launchNow}
-                    disabled={!canUseApp}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-4 py-2 text-xs font-medium text-slate-100 hover:border-amber-400 hover:text-amber-200 disabled:opacity-60"
+                    disabled={!finalIsPro}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-4 py-2 text-xs font-medium text-slate-100 hover:border-amber-400 hover:text-amber-200 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     ⚡ Launch now (ignore schedule)
                   </button>
                 </div>
+
+                {!finalIsPro && (
+                  <div className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                    You&apos;re currently on the preview mode. 
+                    <br />
+                    Try the workflow, then upgrade to SesameTab Pro from the home page to
+                    unlock scheduling and full control.
+                  </div>
+                )}
 
                 <p className="mt-2 text-[10px] text-slate-500">
                   Keep this page open and allow pop-ups for SesameTab so your
@@ -560,7 +583,7 @@ function SesameTabAppPageContent() {
                 </p>
               </form>
 
-              {!isPro && (
+              {!finalIsPro && (
                 <div className="mt-4 pt-4 border-t border-white/10">
                   <button
                     type="button"
@@ -648,7 +671,7 @@ function SesameTabAppPageContent() {
                 )}
               </div>
 
-              {!isPro && (
+              {!finalIsPro && (
                 <button
                   type="button"
                   onClick={handleGoPro}

@@ -1,4 +1,4 @@
-// app/api/checkout-monthly/route.ts
+// app/api/checkout-yearly/route.ts
 
 import { NextResponse } from "next/server";
 
@@ -22,7 +22,7 @@ export async function POST() {
 
         {
 
-          price: process.env.STRIPE_MONTHLY_PRICE_ID!,
+          price: process.env.STRIPE_YEARLY_PRICE_ID!,
 
           quantity: 1,
 

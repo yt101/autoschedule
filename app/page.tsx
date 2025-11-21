@@ -359,18 +359,42 @@ export default function HomePage() {
                   Please use responsibly and in line with each site&apos;s terms.
                 </p>
                 <div className="mt-6 space-y-2">
-                  <Link
-                    href="/signup"
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch("/api/checkout-monthly", {
+                          method: "POST",
+                        });
+                        if (!res.ok) {
+                          console.error("Checkout error:", await res.text());
+                          alert("Something went wrong starting checkout. Please try again.");
+                          return;
+                        }
+                        const data = await res.json();
+                        if (data.url) {
+                          window.location.href = data.url;
+                        }
+                      } catch (err) {
+                        console.error("Checkout error:", err);
+                        alert("Something went wrong starting checkout. Please try again.");
+                      }
+                    }}
                     className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
                   >
-                    Start 3-day trial
-                  </Link>
+                    ⭐ Go Pro – Monthly
+                  </button>
                   <button
                     onClick={() => handleCheckout("yearly")}
                     className="inline-flex w-full items-center justify-center rounded-xl border border-amber-400/70 px-4 py-2 text-xs font-medium text-amber-50 hover:bg-amber-500/10"
                   >
                     Go Pro – Annual (10% off)
                   </button>
+                  <Link
+                    href="/signup"
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-4 py-2 text-xs font-medium text-slate-300 hover:border-amber-400 hover:text-amber-200"
+                  >
+                    Start 3-day trial (no card)
+                  </Link>
                 </div>
               </div>
             </div>

@@ -22,8 +22,8 @@ export async function POST(request: Request) {
       line_items: [
         { price: priceId, quantity: 1 }
       ],
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/billing?canceled=true`,
+      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/login?checkout=success`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/`,
       billing_address_collection: "auto",
       allow_promotion_codes: true,
     });

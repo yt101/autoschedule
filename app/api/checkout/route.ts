@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
         },
       ],
       // NO trial_period_days here
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/billing?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/app`,
+      success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/login?checkout=success`,
+      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/`,
     });
 
     return NextResponse.json({ url: session.url });
