@@ -119,10 +119,10 @@ export default function HomePage() {
 
               <div className="mt-6 flex flex-wrap items-center gap-4">
                 <Link
-                  href="/app?demo=1"
+                  href="/signup"
                   className="inline-flex items-center justify-center rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-amber-400/30 hover:bg-amber-300"
                 >
-                  ✨ Open SesameTab
+                  ✨ Open Sesame for 3 days
                 </Link>
                 <a
                   href="#demo"
@@ -309,15 +309,15 @@ export default function HomePage() {
                   <li>• Cancel anytime during the trial</li>
                 </ul>
                 <div className="mt-6">
-                  <button
-                    onClick={() => handleCheckout("monthly")}
+                  <Link
+                    href="/signup"
                     className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
                   >
                     Start 3-day trial
-                  </button>
+                  </Link>
                 </div>
                 <p className="mt-2 text-[10px] text-slate-500">
-                  Trial handled by Stripe. You can cancel before it renews.
+                  No credit card required. Just sign up and confirm your email.
                 </p>
               </div>
 
@@ -359,12 +359,12 @@ export default function HomePage() {
                   Please use responsibly and in line with each site&apos;s terms.
                 </p>
                 <div className="mt-6 space-y-2">
-                  <button
-                    onClick={() => handleCheckout("monthly")}
+                  <Link
+                    href="/signup"
                     className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
                   >
                     Start 3-day trial
-                  </button>
+                  </Link>
                   <button
                     onClick={() => handleCheckout("yearly")}
                     className="inline-flex w-full items-center justify-center rounded-xl border border-amber-400/70 px-4 py-2 text-xs font-medium text-amber-50 hover:bg-amber-500/10"

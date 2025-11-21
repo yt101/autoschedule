@@ -4,26 +4,10 @@
 
 import { FormEvent, useEffect, useMemo, useState, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 export const dynamic = 'force-dynamic';
-
-function getHostnameSafe(u: string): string {
-  if (!u) return "";
-
-  try {
-    // If user didn't include a scheme, assume https://
-    const maybeUrl = u.startsWith("http://") || u.startsWith("https://")
-      ? u
-      : `https://${u}`;
-
-    const url = new URL(maybeUrl);
-    return url.hostname.replace(/^www\./, "");
-  } catch {
-    // Fallback: show a truncated raw string instead of crashing
-    return u.length > 30 ? u.slice(0, 30) + "…" : u;
-  }
-}
 
 type ScheduleState = {
   targetTime: Date | null;
@@ -33,9 +17,18 @@ type ScheduleState = {
   routineName: string;
 };
 
+type Profile = {
+  trial_ends_at: string | null;
+  plan: string; // 'trial' | 'pro' | others
+};
+
 function SesameTabAppPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const isDemo = searchParams.get("demo") === "1";
+
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const demoUrls = [
     "https://www.cnbc.com/world/?region=usa",
@@ -53,34 +46,6 @@ function SesameTabAppPageContent() {
     (isDemo ? demoUrls : demoUrls).join("\n")
   );
 
-  const handleGoPro = async (billing: "monthly" | "yearly" = "monthly") => {
-    try {
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          plan: billing === "yearly" ? "pro_yearly" : "pro_monthly",
-        }),
-      });
-
-      if (!res.ok) {
-        console.error("Checkout error:", await res.text());
-        alert("Something went wrong starting checkout. Please try again.");
-        return;
-      }
-
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert("No checkout URL returned.");
-      }
-    } catch (e) {
-      console.error("Checkout request failed:", e);
-      alert("Network error starting checkout.");
-    }
-  };
-
   const [schedule, setSchedule] = useState<ScheduleState>({
     targetTime: null,
     urls: [],
@@ -94,6 +59,82 @@ function SesameTabAppPageContent() {
   );
 
   const [countdown, setCountdown] = useState<string>("");
+
+  // 1) Load Supabase user + profile on mount
+  useEffect(() => {
+    const loadUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.push("/signup");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("trial_ends_at, plan")
+        .eq("id", user.id)
+        .single();
+
+      if (error) {
+        console.error("Profile load error:", error);
+      }
+
+      setProfile(
+        data || {
+          trial_ends_at: null,
+          plan: "trial",
+        }
+      );
+
+      setLoadingUser(false);
+    };
+
+    loadUser();
+  }, [router]);
+
+  const now = new Date();
+
+  const trialInfo = useMemo(() => {
+    if (!profile) return { isTrialActive: false, label: "" };
+
+    const { plan, trial_ends_at } = profile;
+
+    if (plan === "pro") {
+      return { isTrialActive: false, label: "Pro plan" };
+    }
+
+    if (!trial_ends_at) {
+      return { isTrialActive: false, label: "Trial not started" };
+    }
+
+    const end = new Date(trial_ends_at);
+    const diffMs = end.getTime() - now.getTime();
+
+    if (diffMs <= 0) {
+      return {
+        isTrialActive: false,
+        label: "Trial ended",
+      };
+    }
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / (24 * 3600));
+    const hours = Math.floor((totalSeconds % (24 * 3600)) / 3600);
+
+    let label = "Trial remaining: ";
+
+    if (days > 0) label += `${days}d `;
+    label += `${hours}h`;
+
+    return { isTrialActive: true, label };
+  }, [profile, now]);
+
+  const isPro = profile?.plan === "pro";
+  const isTrialActive = trialInfo.isTrialActive;
+  const canUseApp = isPro || isTrialActive;
 
   // Parse URLs and compute how they will be repeated based on numWindows
   const previewUrls: string[] = useMemo(() => {
@@ -133,6 +174,11 @@ function SesameTabAppPageContent() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
 
+    if (!canUseApp) {
+      alert("Your trial has ended. Please upgrade to Pro to continue using SesameTab.");
+      return;
+    }
+
     if (!timeInput) {
       alert("Please enter a time (e.g., 09:00).");
       return;
@@ -151,7 +197,6 @@ function SesameTabAppPageContent() {
     const target = new Date();
     target.setHours(hour, minute, 0, 0);
 
-    // If time already passed today, schedule for tomorrow
     if (target.getTime() <= now.getTime()) {
       target.setDate(target.getDate() + 1);
     }
@@ -162,7 +207,7 @@ function SesameTabAppPageContent() {
       .filter((u) => u.length > 0);
 
     if (rawUrls.length === 0) {
-      setStatus("Enter at least one URL.");
+      alert("Please enter at least one URL.");
       return;
     }
 
@@ -186,6 +231,11 @@ function SesameTabAppPageContent() {
   };
 
   const launchWindowsSequentially = (state: ScheduleState) => {
+    if (!canUseApp) {
+      alert("Your trial has ended. Please upgrade to Pro to continue using SesameTab.");
+      return;
+    }
+
     if (state.numWindows <= 0 || state.urls.length === 0) {
       setStatus("Nothing to open — please provide URLs and number of windows.");
       return;
@@ -193,7 +243,6 @@ function SesameTabAppPageContent() {
 
     setStatus("Launching windows...");
 
-    // Build expanded URL list based on desired count
     const urlsToOpen: string[] = [];
 
     for (let i = 0; i < state.numWindows; i++) {
@@ -212,7 +261,6 @@ function SesameTabAppPageContent() {
 
         setSchedule((prev) => ({
           ...prev,
-          // keep schedule.targetTime? you can decide – here we clear it
           targetTime: null,
           urls: prev.urls,
           numWindows: prev.numWindows,
@@ -267,6 +315,11 @@ function SesameTabAppPageContent() {
   }, [schedule]);
 
   const launchNow = () => {
+    if (!canUseApp) {
+      alert("Your trial has ended. Please upgrade to Pro to continue using SesameTab.");
+      return;
+    }
+
     const rawUrls = urlsText
       .split("\n")
       .map((u) => u.trim())
@@ -304,6 +357,36 @@ function SesameTabAppPageContent() {
     return `${isToday} at ${target.toLocaleTimeString()}`;
   }, [schedule.targetTime]);
 
+  const handleGoHome = () => {
+    router.push("/");
+  };
+
+  const handleGoPro = async () => {
+    // Your existing Stripe checkout for Pro monthly
+    const res = await fetch("/api/checkout-monthly", {
+      method: "POST",
+    });
+
+    if (!res.ok) {
+      console.error("Checkout error:", await res.text());
+      alert("Something went wrong starting checkout. Please try again.");
+      return;
+    }
+
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    }
+  };
+
+  if (loadingUser) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        <p className="text-sm text-slate-300">Loading your ritual…</p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
       <div className="absolute inset-0 pointer-events-none">
@@ -317,12 +400,12 @@ function SesameTabAppPageContent() {
           {/* Header */}
           <div className="mb-6 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Link
-                href="/"
+              <button
+                onClick={handleGoHome}
                 className="inline-flex items-center rounded-lg border border-white/15 px-2 py-1 text-[11px] text-slate-300 hover:border-amber-400 hover:text-amber-200"
               >
                 ← Home
-              </Link>
+              </button>
               <div>
                 <h1 className="text-lg font-semibold md:text-xl">
                   SesameTab Ritual {isDemo && <span className="text-xs text-amber-300">(Demo)</span>}
@@ -334,17 +417,23 @@ function SesameTabAppPageContent() {
               </div>
             </div>
 
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-col items-end gap-1">
               <span className="rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-100 border border-amber-400/40">
-                MVP • Local only
+                {isPro ? "Pro plan" : "3-day trial"}
               </span>
-              <button
-                type="button"
-                onClick={() => handleGoPro("monthly")}
-                className="inline-flex items-center rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
-              >
-                ⭐ Go Pro
-              </button>
+              <span className="text-[10px] text-slate-400">
+                {trialInfo.label}
+              </span>
+              <div className="flex gap-2 mt-1">
+                {!isPro && (
+                  <button
+                    onClick={handleGoPro}
+                    className="inline-flex items-center rounded-lg bg-amber-400 px-3 py-1.5 text-[11px] font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+                  >
+                    ⭐ Go Pro
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -361,7 +450,7 @@ function SesameTabAppPageContent() {
                     type="text"
                     value={routineName}
                     onChange={(e) => setRoutineName(e.target.value)}
-                    disabled={isDemo}
+                    disabled={isDemo || !canUseApp}
                     className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
                     placeholder="Morning Markets, Deep Work, Creator Studio..."
                   />
@@ -376,7 +465,7 @@ function SesameTabAppPageContent() {
                       type="time"
                       value={timeInput}
                       onChange={(e) => setTimeInput(e.target.value)}
-                      disabled={isDemo}
+                      disabled={isDemo || !canUseApp}
                       className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
                     />
                     <p className="mt-1 text-[10px] text-slate-400">
@@ -393,11 +482,11 @@ function SesameTabAppPageContent() {
                       min={1}
                       value={numWindows}
                       onChange={(e) => {
-                        if (isDemo) return; // lock in demo mode
+                        if (isDemo || !canUseApp) return;
                         setNumWindows(Math.max(1, Number(e.target.value) || 1));
                       }}
-                      disabled={isDemo}
-                      className={`mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 ${isDemo ? "opacity-50 pointer-events-none" : ""}`}
+                      disabled={isDemo || !canUseApp}
+                      className={`mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 ${(isDemo || !canUseApp) ? "opacity-50 pointer-events-none" : ""}`}
                     />
                     <p className="mt-1 text-[10px] text-slate-400">
                       {isDemo
@@ -418,7 +507,8 @@ function SesameTabAppPageContent() {
                     onChange={(e) =>
                       setDelaySeconds(Math.max(0, Number(e.target.value) || 0))
                     }
-                    className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100"
+                    disabled={!canUseApp}
+                    className={`mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 ${!canUseApp ? "opacity-50" : ""}`}
                   />
                   <p className="mt-1 text-[10px] text-slate-400">
                     Use 1–3 seconds to avoid a &quot;popup storm&quot; feeling.
@@ -432,12 +522,12 @@ function SesameTabAppPageContent() {
                   <textarea
                     value={urlsText}
                     onChange={(e) => {
-                      if (isDemo) return; // lock in demo mode
+                      if (isDemo || !canUseApp) return;
                       setUrlsText(e.target.value);
                     }}
-                    disabled={isDemo}
+                    disabled={isDemo || !canUseApp}
                     rows={6}
-                    className={`mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-xs font-mono text-slate-100 ${isDemo ? "opacity-50 pointer-events-none" : ""}`}
+                    className={`mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-xs font-mono text-slate-100 ${(isDemo || !canUseApp) ? "opacity-50 pointer-events-none" : ""}`}
                   />
                   <p className="mt-1 text-[10px] text-slate-400">
                     {isDemo
@@ -449,14 +539,16 @@ function SesameTabAppPageContent() {
                 <div className="space-y-2">
                   <button
                     type="submit"
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+                    disabled={!canUseApp}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300 disabled:opacity-60"
                   >
                     ✨ Start schedule
                   </button>
                   <button
                     type="button"
                     onClick={launchNow}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-4 py-2 text-xs font-medium text-slate-100 hover:border-amber-400 hover:text-amber-200"
+                    disabled={!canUseApp}
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-white/20 px-4 py-2 text-xs font-medium text-slate-100 hover:border-amber-400 hover:text-amber-200 disabled:opacity-60"
                   >
                     ⚡ Launch now (ignore schedule)
                   </button>
@@ -468,39 +560,17 @@ function SesameTabAppPageContent() {
                 </p>
               </form>
 
-              {/* Stripe Checkout Button */}
-              <div className="mt-4 pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await fetch("/api/checkout-monthly", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                      });
-
-                      if (!res.ok) {
-                        const error = await res.json();
-                        alert(error.error || "Something went wrong starting checkout.");
-                        return;
-                      }
-
-                      const data = await res.json();
-                      if (data.url) {
-                        window.location.href = data.url;
-                      } else {
-                        alert("No checkout URL returned.");
-                      }
-                    } catch (err) {
-                      console.error("Checkout error:", err);
-                      alert("Unable to start checkout. Please try again.");
-                    }
-                  }}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
-                >
-                  ⭐ Go Pro - Start 3-day trial
-                </button>
-              </div>
+              {!isPro && (
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={handleGoPro}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+                  >
+                    ⭐ Go Pro - Start 3-day trial
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Right: Preview & status */}
@@ -542,7 +612,6 @@ function SesameTabAppPageContent() {
                       try {
                         hostname = new URL(u).hostname.replace("www.", "");
                       } catch {
-                        // leave hostname as the raw string or a fallback
                         hostname = u || "URL";
                       }
 
@@ -579,13 +648,15 @@ function SesameTabAppPageContent() {
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => handleGoPro("monthly")}
-                className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
-              >
-                💳 Go Pro (unlock full control)
-              </button>
+              {!isPro && (
+                <button
+                  type="button"
+                  onClick={handleGoPro}
+                  className="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-amber-400/40 hover:bg-amber-300"
+                >
+                  💳 Go Pro (unlock full control)
+                </button>
+              )}
             </div>
           </div>
         </div>
